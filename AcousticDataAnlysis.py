@@ -114,7 +114,7 @@ if uploaded_files:
                     ax.set_xlabel("Sample Index")
                     ax.set_ylabel("Amplitude")
                     ax.set_title(f"Waveform Plot - {section}")
-                    ax.legend()
+       #             ax.legend()
                     ax.grid(True)
                     st.pyplot(fig)
                 continue
@@ -130,6 +130,6 @@ if uploaded_files:
                 ax.set_xlabel("Index")
                 ax.set_ylabel("Value")
                 ax.set_title(f"Scatter Plot - {section}")
-                ax.legend()
+        #        ax.legend()
                 ax.grid(True)
                 st.pyplot(fig)
