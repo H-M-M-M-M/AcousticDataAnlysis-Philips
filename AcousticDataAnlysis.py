@@ -153,7 +153,7 @@ if uploaded_files:
             if section_has_data:
                 fig.update_layout(
                     title=f"Scatter Plot - {section}",
-                    xaxis_title="Index",
+                    xaxis_title="Element",
                     yaxis_title="Value",
                     template="plotly_white"
                 )
