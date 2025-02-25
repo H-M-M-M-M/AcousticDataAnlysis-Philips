@@ -1,8 +1,10 @@
 import streamlit as st
 import plotly.graph_objects as go
 import numpy as np
+import pandas as pd
 import re
 import concurrent.futures
+import plotly.colors
 
 # 📌 Streamlit 页面设置
 st.set_page_config(page_title="RAW & IMP 数据分析", layout="wide")
@@ -12,16 +14,11 @@ st.title("📊 RAW & IMP 数据分析可视化")
 st.sidebar.header("📂 上传你的文件")
 uploaded_files = st.sidebar.file_uploader("选择 .raw 或 .imp 文件", type=["raw", "imp"], accept_multiple_files=True)
 
-# 清除文件按钮
-#if st.sidebar.button("❌ 清除所有文件"):
-   # st.session_state["uploaded_files"] = []
-   # st.rerun()
-
 # 存储所有文件的 section 数据
 sections_data = {}
 bad_elements = set()
 header_info = []
-
+color_map = {}  # 用于存储 Station 对应的颜色
 
 def parse_file(file):
     """解析 .raw 或 .imp 文件，提取数据"""
@@ -29,7 +26,10 @@ def parse_file(file):
     try:
         lines = file.read().decode("utf-8").splitlines()
     except UnicodeDecodeError:
-        lines = file.read().decode("latin-1").splitlines()
+        try:
+            lines = file.read().decode("latin-1").splitlines()
+        except UnicodeDecodeError:
+            lines = file.read().decode("gbk").splitlines()  # 兼容 GBK
 
     sections = {}
     current_section = None
@@ -58,32 +58,20 @@ def parse_file(file):
             value = float(re.search(r"-?[\d.]+", data_match.group(2)).group(0))  # 仅提取数值部分
             sections[current_section]["index_value"].append((key, value))
 
-        # 解析 Waveform 数组（去除单位）
-        waveform_match = re.match(r"^Waveform\.Array\s*=\s*(.+)", line)
-        if waveform_match and current_section:
-            raw_values = waveform_match.group(1).split(",")
-            cleaned_values = [
-                float(re.search(r"-?[\d.]+", v).group(0)) for v in raw_values if re.search(r"-?[\d.]+", v)
-            ]
-            sections[current_section]["waveform"] = cleaned_values
-
-        # 存储 Header 信息
-        if current_section == "Header" and "=" in line:
-            sections[current_section]["raw_text"].append(line)
+        # 存储 Header 信息（保留完整格式）
+        if current_section == "Header":
             key_value_match = re.match(r"^(\w+)\s*=\s*(.+)", line)
             if key_value_match:
                 key, value = key_value_match.groups()
-                if key in ["TestStation", "Operator"]:
-                    header[key] = value
+                header[key] = value  # 直接存储，不修改格式
 
     if header:
         header["file_name"] = file_name
 
     return file_name, sections, header
 
-
 if uploaded_files:
-    # 使用多线程并行解析文件，加快速度
+    # 使用多线程并行解析文件，提高解析速度
     with concurrent.futures.ThreadPoolExecutor() as executor:
         results = list(executor.map(parse_file, uploaded_files))
 
@@ -96,6 +84,13 @@ if uploaded_files:
             if section in bad_elements:
                 continue  # 跳过坏点数据
             sections_data.setdefault(section, []).append((file_name, data))
+
+        # 分配颜色
+        station = header.get("TestStation") or header.get("Station") or "Unknown"
+        if station not in color_map:
+            color_palette = plotly.colors.qualitative.Plotly  # 使用高对比度调色板
+            color_index = len(color_map) % len(color_palette)  # 循环使用颜色
+            color_map[station] = color_palette[color_index]  # 存储颜色
 
     # 获取 TestStation 和 Operator 可选项
     test_stations = list(set(h["TestStation"] for h in header_info if "TestStation" in h))
@@ -116,25 +111,33 @@ if uploaded_files:
 
     # 创建两个 Tab 页面
     tab1, tab2 = st.tabs(["📄 Header 信息", "📊 数据图表"])
-
+                
     # 📄 Header 信息展示
     with tab1:
+        header_df = {}
         for header in header_info:
-            if header["file_name"] in filtered_files:
-                st.subheader(f"📄 Header 信息 - {header['file_name']}")
-                header_text = "\n".join(next((data["raw_text"] for _, data in sections_data.get("Header", []) if "raw_text" in data), []))
-                st.code(header_text, language="ini")
+            file_name = header["file_name"]
+            if file_name in filtered_files:
+                for key, value in header.items():
+                    if key != "file_name":  # 排除文件名
+                        header_df.setdefault(key, []).append(value)
+
+        # 确保所有列的长度一致
+        max_length = max(len(v) for v in header_df.values())
+        for key in list(header_df.keys()):
+            header_df[key] += [None] * (max_length - len(header_df[key]))  # 填充缺失值
+
+        st.write(pd.DataFrame(header_df))  # 显示为表格
 
     # 📊 数据可视化
     with tab2:
-        has_valid_data = False  # 用于判断是否有数据
+        has_valid_data = False
         for section in selected_sections:
             data_sets = sections_data.get(section, [])
             if not data_sets:
                 continue
 
             fig = go.Figure()
-            section_has_data = False  # 该 section 是否有数据
 
             for file_name, data in data_sets:
                 if file_name not in filtered_files:
@@ -142,23 +145,38 @@ if uploaded_files:
 
                 index_value_data = data["index_value"]
                 if index_value_data:
-                    x, y = zip(*sorted(index_value_data))
-                    hover_text = [f"File: {file_name}<br>Index: {xi}<br>Value: {yi}" for xi, yi in zip(x, y)]
-                    fig.add_trace(go.Scatter(x=x, y=y, mode='markers+lines', line=dict(width=1),
-                                             name=f"{file_name} - {section}",
-                                             hovertext=hover_text, hoverinfo='text'))
-                    section_has_data = True
-                    has_valid_data = True  # 至少有一个 section 有数据
+                    index_value_array = np.array(index_value_data)
+                    x = index_value_array[:, 0]  # Index
+                    y = index_value_array[:, 1]  # Value
 
-            if section_has_data:
+                    # 获取对应的 Station 并分配颜色
+                    file_header = next((h for h in header_info if h["file_name"] == file_name), {})
+                    station = file_header.get("TestStation") or file_header.get("Station") or "Unknown"
+                    color = color_map.get(station, "gray")  # 默认灰色
+                    color_with_alpha = color.replace('rgba', 'rgba(0.6)')  # 适当降低透明度
+
+                    # 添加曲线到图表
+                    fig.add_trace(go.Scatter(
+                        x=x, y=y, 
+                        mode='markers+lines', 
+                        marker=dict(size=4),  # 设置点的大小
+                        line=dict(width=0.6, color=color_with_alpha),  # 设置线条宽度
+                        name=station,  # 显示 Station 名称
+                        hoverinfo='text',
+                        hovertext=[f"File: {file_name}<br>Station: {station}<br>Index: {xi}<br>Value: {yi}" 
+                        for xi, yi in zip(x, y)],
+                    ))
+
+            if len(fig.data) > 0:  # 检查是否有数据
                 fig.update_layout(
                     title=f"Scatter Plot - {section}",
                     xaxis_title="Element",
                     yaxis_title="Value",
-                    template="plotly_white"
+                    template="plotly_white",
+                    showlegend=True,
                 )
-                st.plotly_chart(fig)
+                st.plotly_chart(fig, use_container_width=True)
+                has_valid_data = True
 
-        # 如果没有任何数据，则不显示图表
         if not has_valid_data:
             st.warning("⚠️ 没有符合筛选条件的数据可视化。")
