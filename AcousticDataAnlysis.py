@@ -7,7 +7,7 @@ import concurrent.futures
 import plotly.colors
 
 # 📌 Streamlit 页面设置
-st.set_page_config(page_title="RAW & IMP 数据分析", layout="wide")
+st.set_page_config(page_title="RAW & IMP 数据分析，直接从网盘导入APE和/或MIMS数据就可以啦", layout="wide")
 st.title("📊 RAW & IMP 数据分析可视化")
 
 # 侧边栏 - 文件上传
