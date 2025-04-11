@@ -104,11 +104,16 @@ if uploaded_files:
     filtered_files = [h["file_name"] for h in header_info if
                       (selected_station == "All" or h.get("TestStation") == selected_station) and
                       (selected_operator == "All" or h.get("Operator") == selected_operator)]
+   
+   # 用户自定义 limit line
+    st.sidebar.markdown("### ➕ 添加 Limit Lines（添加单点spec，一次加一张图）")
+    upper_limit = st.sidebar.number_input("设置上限（Upper Limit）", value=None, format="%.4f", step=0.1)
+    lower_limit = st.sidebar.number_input("设置下限（Lower Limit）", value=None, format="%.4f", step=0.1)
 
     # 获取所有有效 sections
     all_sections = [sec for sec, data in sections_data.items() if data]
     selected_sections = st.sidebar.multiselect("选择要绘制的部分", all_sections, default=all_sections)
-
+    
     # 创建两个 Tab 页面
     tab1, tab2 = st.tabs(["📄 Header 信息", "📊 数据图表"])
                 
@@ -136,8 +141,15 @@ if uploaded_files:
             data_sets = sections_data.get(section, [])
             if not data_sets:
                 continue
-
             fig = go.Figure()
+            # 添加上下限线（如果用户设置了）
+            if upper_limit is not None:
+                fig.add_hline(y=upper_limit, line=dict(color="red", dash="dash"), 
+                            annotation_text="Upper Limit", annotation_position="top left")
+
+            if lower_limit is not None:
+                fig.add_hline(y=lower_limit, line=dict(color="blue", dash="dash"), 
+                            annotation_text="Lower Limit", annotation_position="bottom left")                  
 
             for file_name, data in data_sets:
                 if file_name not in filtered_files:
