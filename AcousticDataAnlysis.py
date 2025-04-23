@@ -5,6 +5,7 @@ import pandas as pd
 import re
 import concurrent.futures
 import plotly.colors
+import os
 
 # 📌 Streamlit 页面设置
 st.set_page_config(page_title="RAW & IMP 数据分析", layout="wide")
@@ -99,12 +100,29 @@ if uploaded_files:
     # 侧边栏筛选 TestStation 和 Operator
     selected_station = st.sidebar.selectbox("筛选 TestStation", ["All"] + test_stations)
     selected_operator = st.sidebar.selectbox("筛选 Operator", ["All"] + operators)
-
+                      
     # 根据筛选条件获取符合的文件名
     filtered_files = [h["file_name"] for h in header_info if
                       (selected_station == "All" or h.get("TestStation") == selected_station) and
                       (selected_operator == "All" or h.get("Operator") == selected_operator)]
-   
+    
+    # 🆕 生成文件名前缀（去掉路径、后缀，并提取 "-" 前的部分）
+    file_name_prefix_map = {}
+    for fn in filtered_files:
+        base_name = os.path.splitext(fn)[0]  # 去掉 .raw/.imp 后缀
+        prefix = base_name.split("-")[0]  # 提取 "-" 前缀
+        file_name_prefix_map.setdefault(prefix, []).append(fn)  # 一个前缀可能对应多个文件
+
+    # 🆕 显示文件名前缀选项
+    file_prefix_options = sorted(file_name_prefix_map.keys())
+    selected_prefixes = st.sidebar.multiselect("选择要绘制的SN？）", ["All"] + file_prefix_options, default=["All"])
+
+    # 🧠 更新 filtered_files（按前缀筛选）
+    if "All" not in selected_prefixes:
+        filtered_files = []
+        for prefix in selected_prefixes:
+            filtered_files.extend(file_name_prefix_map.get(prefix, []))
+                                    
    # 用户自定义 limit line
     st.sidebar.markdown("### ➕ 添加 Limit Lines（添加单点spec，一次加一张图）")
     upper_limit = st.sidebar.number_input("设置上限（Upper Limit）", value=None, format="%.4f", step=0.1)
