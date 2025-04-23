@@ -116,7 +116,7 @@ if uploaded_files:
     selected_operator = st.sidebar.selectbox("筛选 Operator", ["All"] + operators)
                       
     result_statuses = list(set(h.get("ResultStatus", "Unknown") for h in header_info))
-    selected_status = st.sidebar.selectbox("筛选测试结果状态", ["All"] + result_statuses)
+    selected_status = st.sidebar.selectbox("PASS or Fail？", ["All"] + result_statuses)
 
     filtered_files = [
         h["file_name"]
@@ -135,7 +135,7 @@ if uploaded_files:
 
     # 🆕 显示文件名前缀选项
     file_prefix_options = sorted(file_name_prefix_map.keys())
-    selected_prefixes = st.sidebar.multiselect("筛选文件组（按文件名前缀）", ["All"] + file_prefix_options, default=["All"])
+    selected_prefixes = st.sidebar.multiselect("指定SN？", ["All"] + file_prefix_options, default=["All"])
 
     # 🧠 更新 filtered_files（按前缀筛选）
     if "All" not in selected_prefixes:
