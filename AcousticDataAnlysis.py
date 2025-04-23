@@ -69,7 +69,21 @@ def parse_file(file):
     if header:
         header["file_name"] = file_name
 
+    # 提取 Probe_Status 中的测试结果字段（PASS / FAIL）
+    for line in lines:
+        if "[Probe_Status]" in line:
+            current_section = "Probe_Status"
+            continue
+        if current_section == "Probe_Status":
+            status_match_raw = re.match(r"Overall_Status\s*=\s*(PASS|FAIL)", line, re.IGNORECASE)
+            status_match_imp = re.match(r"PassOrFail\s*=\s*(Pass|Fail)", line, re.IGNORECASE)
+            if status_match_raw:
+                header["ResultStatus"] = status_match_raw.group(1).upper()
+            elif status_match_imp:
+                header["ResultStatus"] = status_match_imp.group(1).upper()
+
     return file_name, sections, header
+
 
 if uploaded_files:
     # 使用多线程并行解析文件，提高解析速度
@@ -101,11 +115,17 @@ if uploaded_files:
     selected_station = st.sidebar.selectbox("筛选 TestStation", ["All"] + test_stations)
     selected_operator = st.sidebar.selectbox("筛选 Operator", ["All"] + operators)
                       
-    # 根据筛选条件获取符合的文件名
-    filtered_files = [h["file_name"] for h in header_info if
-                      (selected_station == "All" or h.get("TestStation") == selected_station) and
-                      (selected_operator == "All" or h.get("Operator") == selected_operator)]
-    
+    result_statuses = list(set(h.get("ResultStatus", "Unknown") for h in header_info))
+    selected_status = st.sidebar.selectbox("筛选测试结果状态", ["All"] + result_statuses)
+
+    filtered_files = [
+        h["file_name"]
+        for h in header_info
+        if (selected_station == "All" or h.get("TestStation") == selected_station)
+        and (selected_operator == "All" or h.get("Operator") == selected_operator)
+        and (selected_status == "All" or h.get("ResultStatus") == selected_status)
+    ]
+
     # 🆕 生成文件名前缀（去掉路径、后缀，并提取 "-" 前的部分）
     file_name_prefix_map = {}
     for fn in filtered_files:
@@ -115,7 +135,7 @@ if uploaded_files:
 
     # 🆕 显示文件名前缀选项
     file_prefix_options = sorted(file_name_prefix_map.keys())
-    selected_prefixes = st.sidebar.multiselect("选择要绘制的SN？）", ["All"] + file_prefix_options, default=["All"])
+    selected_prefixes = st.sidebar.multiselect("筛选文件组（按文件名前缀）", ["All"] + file_prefix_options, default=["All"])
 
     # 🧠 更新 filtered_files（按前缀筛选）
     if "All" not in selected_prefixes:
