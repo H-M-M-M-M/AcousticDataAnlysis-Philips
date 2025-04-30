@@ -5,34 +5,7 @@ import pandas as pd
 import re
 import concurrent.futures
 import plotly.colors
-import numpy as np
 import os
-import socket
-import getpass
-from datetime import datetime
-
-# 记录用户使用日志的函数
-def log_user_usage(log_file= r"\\161.92.72.15\Test_Engineering\Files_Transfer\HMM\user_log.csv"):
-    username = getpass.getuser()
-    hostname = socket.gethostname()
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    
-    log_entry = {
-        'Timestamp': timestamp,
-        'Username': username,
-        'Hostname': hostname,
-    }
-    
-    if os.path.exists(log_file):
-        df = pd.read_csv(log_file)
-        df = pd.concat([df, pd.DataFrame([log_entry])], ignore_index=True)
-    else:
-        df = pd.DataFrame([log_entry])
-    
-    df.to_csv(log_file, index=False)
-
-# 调用记录函数
-log_user_usage()
 
 # 📌 Streamlit 页面设置
 st.set_page_config(page_title="RAW & IMP 数据分析", layout="wide")
