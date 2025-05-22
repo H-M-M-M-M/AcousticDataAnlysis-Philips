@@ -316,17 +316,17 @@ if uploaded_files:
                 short_name = os.path.splitext(file_name)[0]
 
                 row = {
-                    "文件名": short_name,
-                    "测试站点": file_header.get("TestStation", "未知"),
-                    "操作员": file_header.get("Operator", "未知"),
-                    "测试时间": f"{file_header.get('Date', '未知')} {file_header.get('Time', '')}",
-                    "状态": file_header.get("ResultStatus", "未知"),
-                    "数量": count_total,
-                    "平均值": round(stats.get('Average', 0), 4),
-                    "最小值": round(stats.get('Min', 0), 4),
-                    "最大值": round(stats.get('Max', 0), 4),
-                    "范围": round(stats.get('Range', 0), 4),
-                    "标准差": round(stats.get('Std Dev', 0), 4),
+                    "File": short_name,
+                    "Station": file_header.get("TestStation") or file_header.get("Station") or "未知",
+                    "Operator": file_header.get("Operator", "未知"),
+                    "TestTime": f"{file_header.get('Date', '未知')} {file_header.get('Time', '')}",
+                    "Status": file_header.get("ResultStatus", "未知"),
+                    "ElementCount": count_total,
+                    "Average": round(stats.get('Average', 0), 4),
+                    "Min": round(stats.get('Min', 0), 4),
+                    "Max": round(stats.get('Max', 0), 4),
+                    "Range": round(stats.get('Range', 0), 4),
+                    "Std": round(stats.get('Std Dev', 0), 4),
                 }
 
                 if upper_limit is not None:
@@ -391,6 +391,7 @@ if uploaded_files:
                             showlegend=True,
                         )
                         st.plotly_chart(fig, use_container_width=True)
+                        has_valid_data = True
 
         if not has_valid_data:
             st.warning("⚠️ 没有符合筛选条件的数据可视化。")
