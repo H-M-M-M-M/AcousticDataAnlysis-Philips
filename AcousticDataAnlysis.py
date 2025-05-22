@@ -22,7 +22,7 @@ header_info = []
 color_map = {}  # 用于存储 Station 对应的颜色
 
 def parse_file(file):
-    """解析 .raw 或 .imp 文件，提取数据"""
+    """解析 .raw 或 .imp 文件，提取数据，同时支持新旧两种格式"""
     file_name = file.name
     try:
         lines = file.read().decode("utf-8").splitlines()
@@ -35,52 +35,134 @@ def parse_file(file):
     sections = {}
     current_section = None
     header = {}
+    file_format = "old"  # 默认假设为旧格式
+    
+    # 检查是否为新格式
+    if any("{Start _FULL data}" in line for line in lines):
+        file_format = "new"
+    
+    if file_format == "new":
+        in_statistics = False
+        in_individual_data = False
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+                
+            # 识别数据块边界
+            if line == "{Start _FULL data}":
+                continue
+            elif line == "{***Begin_Statistics***}":
+                in_statistics = True
+                continue
+            elif line == "{***End_Statistics***}":
+                in_statistics = False
+                continue
+            elif line == "{***Begin_Individual_Element_Data***}":
+                in_individual_data = True
+                continue
+                
+            # 识别 section
+            section_match = re.match(r"^\[\s*(.+?)\s*\]$", line)
+            if section_match:
+                current_section = section_match.group(1).strip()
+                # 移除新格式中的后缀，使其与旧格式兼容
+                current_section = re.sub(r"_FULL(\s+\([^\)]+\))?", "", current_section)
+                sections[current_section] = {"index_value": [], "waveform": [], "raw_text": []}
+                continue
 
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
+            # 识别坏点 BadEL
+            if "BadEL" in line or "Bad_Elements" in line:
+                bad_elements.add(current_section)
 
-        # 识别 section
-        section_match = re.match(r"^\[\s*(.+?)\s*\]$", line)
-        if section_match:
-            current_section = section_match.group(1).strip()
-            sections[current_section] = {"index_value": [], "waveform": [], "raw_text": []}
-            continue
+            # 解析键值对数据（去除单位）
+            data_match = re.match(r"^\s*(\d+)\s*=\s*([\d.-]+)", line)
+            if data_match and current_section:
+                key = int(data_match.group(1))
+                value = float(re.search(r"-?[\d.]+", data_match.group(2)).group(0))  # 仅提取数值部分
+                sections[current_section]["index_value"].append((key, value))
 
-        # 识别坏点 BadEL
-        if "BadEL" in line:
-            bad_elements.add(current_section)
+            # 存储 Header 信息（保留完整格式）
+            if current_section == "Header":
+                key_value_match = re.match(r"^(\w+)\s*=\s*(.+)", line)
+                if key_value_match:
+                    key, value = key_value_match.groups()
+                    header[key] = value  # 直接存储，不修改格式
+                    
+            # 从新格式的Header_FULL中提取信息
+            if current_section == "Header_FULL":
+                key_value_match = re.match(r"^(\w+)\s*=\s*(.+)", line)
+                if key_value_match:
+                    key, value = key_value_match.groups()
+                    # 将新格式的部分字段映射到旧格式的字段
+                    if key == "SerialNumber":
+                        header["SN"] = value
+                    elif key == "TestStation":
+                        header["TestStation"] = value
+                    elif key == "Operator":
+                        header["Operator"] = value
+                    elif key == "Date":
+                        header["Date"] = value
+                    elif key == "Time":
+                        header["Time"] = value
+                    else:
+                        header[key] = value
+                        
+            # 提取新格式中的测试结果
+            if current_section == "Probe_Status_FULL":
+                status_match = re.match(r"Overall_Status\s*=\s*(PASS|FAIL)", line, re.IGNORECASE)
+                if status_match:
+                    header["ResultStatus"] = status_match.group(1).upper()
+                    
+    else:  # 旧格式处理逻辑（保持原有代码不变）
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
 
-        # 解析键值对数据（去除单位）
-        data_match = re.match(r"^\s*(\d+)\s*=\s*([\d.-]+)", line)
-        if data_match and current_section:
-            key = int(data_match.group(1))
-            value = float(re.search(r"-?[\d.]+", data_match.group(2)).group(0))  # 仅提取数值部分
-            sections[current_section]["index_value"].append((key, value))
+            # 识别 section
+            section_match = re.match(r"^\[\s*(.+?)\s*\]$", line)
+            if section_match:
+                current_section = section_match.group(1).strip()
+                sections[current_section] = {"index_value": [], "waveform": [], "raw_text": []}
+                continue
 
-        # 存储 Header 信息（保留完整格式）
-        if current_section == "Header":
-            key_value_match = re.match(r"^(\w+)\s*=\s*(.+)", line)
-            if key_value_match:
-                key, value = key_value_match.groups()
-                header[key] = value  # 直接存储，不修改格式
+            # 识别坏点 BadEL
+            if "BadEL" in line:
+                bad_elements.add(current_section)
+
+            # 解析键值对数据（去除单位）
+            data_match = re.match(r"^\s*(\d+)\s*=\s*([\d.-]+)", line)
+            if data_match and current_section:
+                key = int(data_match.group(1))
+                value = float(re.search(r"-?[\d.]+", data_match.group(2)).group(0))  # 仅提取数值部分
+                sections[current_section]["index_value"].append((key, value))
+
+            # 存储 Header 信息（保留完整格式）
+            if current_section == "Header":
+                key_value_match = re.match(r"^(\w+)\s*=\s*(.+)", line)
+                if key_value_match:
+                    key, value = key_value_match.groups()
+                    header[key] = value  # 直接存储，不修改格式
 
     if header:
         header["file_name"] = file_name
+        header["file_format"] = file_format
 
-    # 提取 Probe_Status 中的测试结果字段（PASS / FAIL）
-    for line in lines:
-        if "[Probe_Status]" in line:
-            current_section = "Probe_Status"
-            continue
-        if current_section == "Probe_Status":
-            status_match_raw = re.match(r"Overall_Status\s*=\s*(PASS|FAIL)", line, re.IGNORECASE)
-            status_match_imp = re.match(r"PassOrFail\s*=\s*(Pass|Fail)", line, re.IGNORECASE)
-            if status_match_raw:
-                header["ResultStatus"] = status_match_raw.group(1).upper()
-            elif status_match_imp:
-                header["ResultStatus"] = status_match_imp.group(1).upper()
+    # 提取 Probe_Status 中的测试结果字段（PASS / FAIL） - 旧格式逻辑
+    if "ResultStatus" not in header:
+        for line in lines:
+            if "[Probe_Status]" in line:
+                current_section = "Probe_Status"
+                continue
+            if current_section == "Probe_Status":
+                status_match_raw = re.match(r"Overall_Status\s*=\s*(PASS|FAIL)", line, re.IGNORECASE)
+                status_match_imp = re.match(r"PassOrFail\s*=\s*(Pass|Fail)", line, re.IGNORECASE)
+                if status_match_raw:
+                    header["ResultStatus"] = status_match_raw.group(1).upper()
+                elif status_match_imp:
+                    header["ResultStatus"] = status_match_imp.group(1).upper()
 
     return file_name, sections, header
 
@@ -143,7 +225,7 @@ if uploaded_files:
         for prefix in selected_prefixes:
             filtered_files.extend(file_name_prefix_map.get(prefix, []))
                                     
-   # 用户自定义 limit line
+    # 用户自定义 limit line
     st.sidebar.markdown("### ➕ 添加 Limit Lines（添加单点spec，一次加一张图）")
     upper_limit = st.sidebar.number_input("设置上限（Upper Limit）", value=None, format="%.4f", step=0.1)
     lower_limit = st.sidebar.number_input("设置下限（Lower Limit）", value=None, format="%.4f", step=0.1)
