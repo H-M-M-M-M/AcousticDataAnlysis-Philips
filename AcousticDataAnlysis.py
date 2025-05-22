@@ -166,6 +166,28 @@ def parse_file(file):
 
     return file_name, sections, header
 
+def calculate_summary(data_array, upper_limit=None, lower_limit=None):
+    """计算数据的统计摘要"""
+    if len(data_array) == 0:
+        return {}
+    
+    summary = {
+        'Count': len(data_array),
+        'Average': np.mean(data_array),
+        'Min': np.min(data_array),
+        'Max': np.max(data_array),
+        'Range': np.max(data_array) - np.min(data_array),
+        'Std Dev': np.std(data_array)
+    }
+    
+    # 计算符合规格的比例
+    if upper_limit is not None and lower_limit is not None:
+        within_spec = np.sum((data_array >= lower_limit) & (data_array <= upper_limit))
+        summary['Within Spec (%)'] = (within_spec / len(data_array)) * 100 if len(data_array) > 0 else 0
+        summary['Above UL (%)'] = (np.sum(data_array > upper_limit) / len(data_array)) * 100
+        summary['Below LL (%)'] = (np.sum(data_array < lower_limit) / len(data_array)) * 100
+    
+    return summary
 
 if uploaded_files:
     # 使用多线程并行解析文件，提高解析速度
@@ -254,61 +276,121 @@ if uploaded_files:
 
         st.write(pd.DataFrame(header_df))  # 显示为表格
 
-    # 📊 数据可视化
     with tab2:
-        has_valid_data = False
         for section in selected_sections:
             data_sets = sections_data.get(section, [])
             if not data_sets:
                 continue
-            fig = go.Figure()
-            # 添加上下限线（如果用户设置了）
-            if upper_limit is not None:
-                fig.add_hline(y=upper_limit, line=dict(color="red", dash="dash"), 
-                            annotation_text="Upper Limit", annotation_position="top left")
 
-            if lower_limit is not None:
-                fig.add_hline(y=lower_limit, line=dict(color="blue", dash="dash"), 
-                            annotation_text="Lower Limit", annotation_position="bottom left")                  
-
+            file_rows = []
             for file_name, data in data_sets:
                 if file_name not in filtered_files:
-                    continue  # 只绘制符合筛选条件的文件
+                    continue
 
-                index_value_data = data["index_value"]
-                if index_value_data:
-                    index_value_array = np.array(index_value_data)
-                    x = index_value_array[:, 0]  # Index
-                    y = index_value_array[:, 1]  # Value
+                index_value_data = data.get("index_value", [])
+                if not index_value_data:
+                    continue
 
-                    # 获取对应的 Station 并分配颜色
-                    file_header = next((h for h in header_info if h["file_name"] == file_name), {})
-                    station = file_header.get("TestStation") or file_header.get("Station") or "Unknown"
-                    color = color_map.get(station, "gray")  # 默认灰色
-                    color_with_alpha = color.replace('rgba', 'rgba(0.6)')  # 适当降低透明度
+                try:
+                    values = np.array(index_value_data)[:, 1].astype(float)
+                except Exception:
+                    continue
 
-                    # 添加曲线到图表
-                    fig.add_trace(go.Scatter(
-                        x=x, y=y, 
-                        mode='markers+lines', 
-                        marker=dict(size=4),  # 设置点的大小
-                        line=dict(width=0.6, color=color_with_alpha),  # 设置线条宽度
-                        name=station,  # 显示 Station 名称
-                        hoverinfo='text',
-                        hovertext=[f"File: {file_name}<br>Station: {station}<br>Index: {xi}<br>Value: {yi}" 
-                        for xi, yi in zip(x, y)],
-                    ))
+                if values.size == 0:
+                    continue
 
-            if len(fig.data) > 0:  # 检查是否有数据
-                fig.update_layout(
-                    title=f"Scatter Plot - {section}",
-                    xaxis_title="Element",
-                    yaxis_title="Value",
-                    template="plotly_white",
-                    showlegend=True,
-                )
-                st.plotly_chart(fig, use_container_width=True)
-                has_valid_data = True
+                stats = calculate_summary(values, upper_limit, lower_limit)
+
+                count_total = values.size
+
+                count_above = np.sum(values > upper_limit) if upper_limit is not None else 0
+                count_below = np.sum(values < lower_limit) if lower_limit is not None else 0
+
+                above_percent = (count_above / count_total) * 100 if count_total > 0 else 0
+                below_percent = (count_below / count_total) * 100 if count_total > 0 else 0
+
+                above_display = f"{count_above} ({above_percent:.1f}%)" if upper_limit is not None else "-"
+                below_display = f"{count_below} ({below_percent:.1f}%)" if lower_limit is not None else "-"
+
+                file_header = next((h for h in header_info if h["file_name"] == file_name), {})
+                short_name = os.path.splitext(file_name)[0]
+
+                row = {
+                    "文件名": short_name,
+                    "测试站点": file_header.get("TestStation", "未知"),
+                    "操作员": file_header.get("Operator", "未知"),
+                    "测试时间": f"{file_header.get('Date', '未知')} {file_header.get('Time', '')}",
+                    "状态": file_header.get("ResultStatus", "未知"),
+                    "数量": count_total,
+                    "平均值": round(stats.get('Average', 0), 4),
+                    "最小值": round(stats.get('Min', 0), 4),
+                    "最大值": round(stats.get('Max', 0), 4),
+                    "范围": round(stats.get('Range', 0), 4),
+                    "标准差": round(stats.get('Std Dev', 0), 4),
+                }
+
+                if upper_limit is not None:
+                    row["超上限"] = above_display
+                if lower_limit is not None:
+                    row["低下限"] = below_display
+
+                file_rows.append(row)
+
+            if file_rows:
+                df_summary = pd.DataFrame(file_rows)
+
+                with st.expander(f"📊 {section} 的统计摘要", expanded=False):
+                    # 先显示统计表
+                    st.dataframe(df_summary, use_container_width=True)
+
+                    # 再绘制图表（和之前逻辑一样）
+                    fig = go.Figure()
+
+                    # 添加上下限线
+                    if upper_limit is not None:
+                        fig.add_hline(y=upper_limit, line=dict(color="red", dash="dash"),
+                                      annotation_text="Upper Limit", annotation_position="top left")
+
+                    if lower_limit is not None:
+                        fig.add_hline(y=lower_limit, line=dict(color="blue", dash="dash"),
+                                      annotation_text="Lower Limit", annotation_position="bottom left")
+
+                    for file_name, data in data_sets:
+                        if file_name not in filtered_files:
+                            continue
+
+                        index_value_data = data.get("index_value", [])
+                        if not index_value_data:
+                            continue
+
+                        index_value_array = np.array(index_value_data)
+                        x = index_value_array[:, 0]
+                        y = index_value_array[:, 1].astype(float)
+
+                        file_header = next((h for h in header_info if h["file_name"] == file_name), {})
+                        station = file_header.get("TestStation") or file_header.get("Station") or "Unknown"
+                        color = color_map.get(station, "gray")
+
+                        fig.add_trace(go.Scatter(
+                            x=x, y=y,
+                            mode='markers+lines',
+                            marker=dict(size=4),
+                            line=dict(width=0.6, color=color),
+                            name=station,
+                            hoverinfo='text',
+                            hovertext=[f"File: {file_name}<br>Station: {station}<br>Index: {xi}<br>Value: {yi}"
+                                       for xi, yi in zip(x, y)],
+                        ))
+
+                    if len(fig.data) > 0:
+                        fig.update_layout(
+                            title=f"Scatter Plot - {section}",
+                            xaxis_title="Element",
+                            yaxis_title="Value",
+                            template="plotly_white",
+                            showlegend=True,
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
 
         if not has_valid_data:
             st.warning("⚠️ 没有符合筛选条件的数据可视化。")
