@@ -320,7 +320,7 @@ if uploaded_files:
                     "Station": file_header.get("TestStation") or file_header.get("Station") or "未知",
                     "Operator": file_header.get("Operator", "未知"),
                     "TestTime": f"{file_header.get('Date', '未知')} {file_header.get('Time', '')}",
-                    "Status": file_header.get("ResultStatus", "未知"),
+                #    "Status": file_header.get("ResultStatus", "未知"),
                     "ElementCount": count_total,
                     "Average": round(stats.get('Average', 0), 4),
                     "Min": round(stats.get('Min', 0), 4),
